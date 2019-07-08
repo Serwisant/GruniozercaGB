@@ -62,6 +62,37 @@ inicialization:
 	ld	a, %10000010	; Turning on the LCD
 	ld	[rLCDC], a	
 	
+; Let's prepare the seed for the RNG
+; We can use the property of the OAM, after each reset GameBoy is filled
+; with random values. This will be base for our random generator.
+; We will use value of the 1st sprite.
+; We will use address $C200 for the seed and
+; address $C201 for our user manipulation
+
+	ld	hl, _OAMRAM
+	ld	a, [hl]
+	ld	hl, $C200
+	ld	[hl], a
+	jp	cleaning_OAM
+	
+; Generating next value
+
+generate_next_value:	
+	ld	hl, $C200
+	ld	a, [hl]
+	ld	hl, $C201
+.next_generation:
+	swap a
+	rlca
+	xor	a, [hl]
+	cp	144
+	jp	c, .return_value
+	jp	.next_generation
+.return_value
+	ld	hl, $C200
+	ld	[hl], a
+	ret
+	
 ; Cleaning OAM
 ; SOME STUPID !@# BUGS WITHOUT IT
 ; Because turning on the sprite layer
@@ -69,6 +100,7 @@ inicialization:
 ; For the faster completion, cleaning occurs only during the HBlank
 ; Yes, it's not perfect, but remaining garbage is not visible
 
+cleaning_OAM:
 	ld	b, 160
 	ld	hl, $FE00
 	
@@ -102,6 +134,7 @@ main_loop:
 	call	wait_for_VBlank
 	call	draw_Grunio
 	call	handle_input
+	call	generate_next_value
 .fin_vB
 	jr	main_loop
 	
@@ -139,9 +172,15 @@ handle_input:
 	ld	a, [rP1]
 	cp	%11101101	; Is "left" direction pressed?
 	jp	nz, .jump_to_right
+	ld	hl, $C201	; RNG user manipulation
+	ld	a, [hl]
+	add	a, 119		; Arbitrary value
+	xor	[hl]
+	bit	7, a
 	ld	a, [$C101]	; Grunio's horizontal position
 	cp	6			; Grunio's position can't be < 8
 	jp	z, .jump_to_right	; We want to see entire Grunio on the screen
+	ld	[hl], a
 	ld	b, 6		; Moving all 6 sprites
 	ld	hl, $C101
 	ld	de, 2		; The offset between X positions in our "OAM"
@@ -183,6 +222,11 @@ handle_input:
 .jump_to_right:
 	cp	%11101110	; Is "right" direction pressed?
 	jp	nz, .return
+	ld	hl, $C201	; RNG user manipulation
+	ld	a, [hl]
+	add	a, 71		; Arbitrary value
+	xor	[hl]
+	bit	5, a
 	ld	a, [$C101]
 	cp	$92			; Grunio again can't leave the screen
 	jp	z, .return
