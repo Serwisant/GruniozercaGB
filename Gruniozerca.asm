@@ -29,7 +29,7 @@ inicialization:
 	
 	ld	hl, Sprite_Data
 	ld	de, _VRAM
-	ld	bc, 16*8		; 16 * number of sprites to load
+	ld	bc, 16*9		; 16 * number of sprites to load
 	
 .load_graphics:
 	ld	a, [hl]
@@ -119,20 +119,35 @@ cleaning_OAM:
 	ld	hl, $C100
 	ld	de, Grunio_OAM
 	ld	b, 4*6	; 4 bytes * 6 Grunio sprites
-.next_OAM_Byte:
+.next_OAM_Grunio_Byte:
 	ld	a, [de]
 	ld	[hl], a
 	dec	b
 	inc	hl
 	inc	de
 	ld	a, b
-	jp nz, .next_OAM_Byte
+	jp nz, .next_OAM_Grunio_Byte
+	
+; Preparing the carrot's space
+	ld	hl, $C150
+	ld	de, Carrot_OAM
+	ld	b, 4*1
+.next_OAM_Carrot_Byte:
+	ld	a, [de]
+	ld	[hl], a
+	dec	b
+	inc	hl
+	inc	de
+	ld	a, b
+	jp nz, .next_OAM_Carrot_Byte
 
 ; Main loop
 
 main_loop:
 	call	wait_for_VBlank
+	call	update_Carrot
 	call	draw_Grunio
+	call	draw_Carrot
 	call	handle_input
 	call	generate_next_value
 .fin_vB
@@ -161,6 +176,43 @@ draw_Grunio:
 	jp	nz, .next_Grunio_byte
 	ret
 
+draw_Carrot:
+	ld	hl, $FE18
+	ld	de, $C150
+	ld	b, 4*1
+.next_Grunio_byte:
+	ld	a, [de]
+	ld	[hl], a
+	inc	hl
+	inc	de
+	dec	b
+	jp	nz, .next_Grunio_byte
+	ld	hl, $C201	; Bigger RNG manipulation
+	ld	a, [hl]
+	inc	a
+	ld	[hl], a
+	ret
+	
+update_Carrot:
+	ld	hl, $C150	; The carrot's OAM
+	ld	a, [hl]
+	add	a, 2
+	cp	$78			; Did the carrot reach Y equal to 50h?
+	jp	nc, .generate_new_carrot	; If yes, generate a new carrot
+	ld	[hl], a
+	ret
+.generate_new_carrot:
+	ld	hl, $C200
+	ld	a, [hl]
+	add	8
+	ld	hl, $C151
+	ld	[hl], a
+	dec	hl
+	ld	a, 0
+	ld	[hl], a
+	ret
+	
+
 ; Handling input and moving Grunio
 
 handle_input:
@@ -175,6 +227,7 @@ handle_input:
 	ld	hl, $C201	; RNG user manipulation
 	ld	a, [hl]
 	add	a, 119		; Arbitrary value
+	ld	[hl], a
 	xor	[hl]
 	bit	7, a
 	ld	a, [$C101]	; Grunio's horizontal position
@@ -186,7 +239,7 @@ handle_input:
 	ld	de, 2		; The offset between X positions in our "OAM"
 .move_Grunio_left:
 	ld	a, [hl]
-	sub	2			; Move sprite 2px left
+	sub	3			; Move sprite 2px left
 	ld	[hl], a
 	inc	hl
 	inc	hl
@@ -224,17 +277,19 @@ handle_input:
 	jp	nz, .return
 	ld	hl, $C201	; RNG user manipulation
 	ld	a, [hl]
-	add	a, 71		; Arbitrary value
+	add	a, 241		; Arbitrary value
+	ld	[hl], a
 	xor	[hl]
 	bit	5, a
 	ld	a, [$C101]
 	cp	$92			; Grunio again can't leave the screen
 	jp	z, .return
 	ld	hl, $C101
+	ld	b, 6
 	ld	de, 4		; The offset between X positions in our "OAM"
 .move_Grunio_right:
 	ld	a, [hl]
-	add	2
+	add	3
 	ld	[hl], a
 	add	hl, de
 	dec	b
@@ -274,16 +329,18 @@ db	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
 db	$FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF
 DB	$00,$00,$0F,$0F,$1F,$18,$3F,$30	; Grunio sprites start!
 DB	$FF,$E0,$FF,$80,$FF,$80,$FF,$80
-DB $BF,$C0,$9F,$E0,$8F,$F3,$81,$FF
-DB $41,$7F,$27,$3F,$38,$38,$1E,$1E
-DB $00,$00,$C4,$C4,$FE,$3E,$FD,$07
-DB $FD,$06,$FF,$00,$FF,$00,$FF,$00
-DB $FF,$00,$FF,$00,$FF,$00,$00,$FF
-DB $00,$FF,$FF,$FF,$0E,$0E,$07,$07
-DB $00,$00,$00,$00,$00,$00,$80,$80
-DB $E0,$60,$F0,$10,$58,$28,$48,$38
-DB $C8,$38,$98,$78,$20,$E0,$40,$C0
-DB $80,$80,$00,$00,$00,$00,$00,$00	; Grunio end
+DB	$BF,$C0,$9F,$E0,$8F,$F3,$81,$FF
+DB	$41,$7F,$27,$3F,$38,$38,$1E,$1E
+DB	$00,$00,$C4,$C4,$FE,$3E,$FD,$07
+DB	$FD,$06,$FF,$00,$FF,$00,$FF,$00
+DB	$FF,$00,$FF,$00,$FF,$00,$00,$FF
+DB	$00,$FF,$FF,$FF,$0E,$0E,$07,$07
+DB	$00,$00,$00,$00,$00,$00,$80,$80
+DB	$E0,$60,$F0,$10,$58,$28,$48,$38
+DB	$C8,$38,$98,$78,$20,$E0,$40,$C0
+DB	$80,$80,$00,$00,$00,$00,$00,$00	; Grunio end
+DB	$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF	; Carrot start
+DB	$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF	; Carrot end
 Grunio_OAM:
 db	$78, $50, $2, 0
 db	$80, $50, $3, 0
@@ -291,5 +348,7 @@ db	$78, $58, $4, 0
 db	$80, $58, $5, 0
 db	$78, $60, $6, 0
 db	$80, $60, $7, 0
+Carrot_OAM:
+db	$79, $00, $8, 0
 
 EndTileCara:
