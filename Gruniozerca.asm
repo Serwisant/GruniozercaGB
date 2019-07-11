@@ -1,3 +1,14 @@
+; Memory map:
+;	$C100 - Grunio's OAM
+;	$C150 - Carrot's OAM
+;	$C170 - Carrot collision state
+;	$C180 - Carrot type: black or grey/green (depends on the GameBoy's screen)
+;	$C190 - Grunio's Color (Grunio/Dida)
+;	$C200 - RNG seed
+;	$C201 - User RNG manipulation
+;	$C210 - Score
+;	$C220 - "Lives" (We all know Grunio and Dida are invincible)
+
 INCLUDE "gbhw.inc"
 
 SECTION "start", ROM0[$0100]
@@ -29,7 +40,7 @@ inicialization:
 	
 	ld	hl, Sprite_Data
 	ld	de, _VRAM
-	ld	bc, 16*9		; 16 * number of sprites to load
+	ld	bc, 16*10		; 16 * number of sprites to load
 	
 .load_graphics:
 	ld	a, [hl]
@@ -129,9 +140,10 @@ cleaning_OAM:
 	jp nz, .next_OAM_Grunio_Byte
 	
 ; Preparing the carrot's space
+
 	ld	hl, $C150
 	ld	de, Carrot_OAM
-	ld	b, 4*1
+	ld	b, 4*4
 .next_OAM_Carrot_Byte:
 	ld	a, [de]
 	ld	[hl], a
@@ -140,12 +152,40 @@ cleaning_OAM:
 	inc	de
 	ld	a, b
 	jp nz, .next_OAM_Carrot_Byte
+	ld	hl, $C170	; Carrot's collision state
+	ld	a, 0	; State $42 = generate a new carrot
+				; Since we begin a new game, generate one
+	ld	[hl], a
+	
+; Reset score
+	ld	a, 0
+	ld	hl, $C210
+	ld	[hl], a
+
+; Reset "lives"
+	ld	a, 3
+	ld	hl, $C220
+	ld	[hl], a
+	
+; PALETTE TEST
+	ld	hl, $FF49
+	ld	a, $FF
+	ld	[hl], a
+	ld	hl, $C153
+	ld	a, [hl]
+	set	4, a
+	ld	[hl], a
+	ld	hl, $C157
+	ld	a, [hl]
+	set	4, a
+	ld	[hl], a
 
 ; Main loop
 
 main_loop:
 	call	wait_for_VBlank
 	call	update_Carrot
+	call	check_collision
 	call	draw_Grunio
 	call	draw_Carrot
 	call	handle_input
@@ -179,7 +219,7 @@ draw_Grunio:
 draw_Carrot:
 	ld	hl, $FE18
 	ld	de, $C150
-	ld	b, 4*1
+	ld	b, 4*2
 .next_Grunio_byte:
 	ld	a, [de]
 	ld	[hl], a
@@ -194,11 +234,16 @@ draw_Carrot:
 	ret
 	
 update_Carrot:
+	ld	hl, $C170	; Let's check if we should reset the carrot after the collision
+	ld	a, [hl]
+	cp	$42
+	jp	z, .generate_new_carrot	; If yes, generate a new carrot
 	ld	hl, $C150	; The carrot's OAM
 	ld	a, [hl]
 	add	a, 2
-	cp	$78			; Did the carrot reach Y equal to 50h?
-	jp	nc, .generate_new_carrot	; If yes, generate a new carrot
+	ld	[hl], a
+	ld	hl, $C154
+	add	a, 8
 	ld	[hl], a
 	ret
 .generate_new_carrot:
@@ -207,11 +252,67 @@ update_Carrot:
 	add	8
 	ld	hl, $C151
 	ld	[hl], a
-	dec	hl
+	ld	hl, $C155
+	ld	[hl], a
+	ld	hl, $C150
 	ld	a, 0
+	ld	[hl], a
+	ld	hl, $C154
+	add	8
 	ld	[hl], a
 	ret
 	
+; Collision between the carrot and Grunio
+	
+check_collision:
+; Check y collision
+	ld	hl, $C150	; Carrot Y
+	ld	a, [hl]
+	cp	$68		; Is Carrot too high?
+	jp	c, .too_high
+	cp	$78		; Is Carrot at the correct height?
+	jp	c, .correct_height	; Carrot is between 
+	ld	hl, $C170
+	ld	a, $42	; State for "reset a carrot"
+	ld	[hl], a
+	ld	hl, $C220	; Lose a "life"
+	ld	a, [hl]
+	dec	a
+	ld	[hl], a
+	ret
+.correct_height:
+; Carrot's right side and Grunio's left side
+	ld	hl, $C151
+	ld	a, [hl]
+	add	8	; We want to compare Carrot's right side with Grunio's left side
+	ld	hl, $C101
+	cp	a, [hl]
+	jp	c, .too_high	; Not colliding
+; Carrot's left side and Grunio's right side
+.check_left_side:
+	ld	hl, $C101
+	ld	a, [hl]
+	add	a, 24	; Grunio's sprite is 24 pixel wide
+	ld	hl, $C151
+	cp	a, [hl]
+	jp	c, .too_high	; The check is reversed in this case, so the condition is also reversed
+; The conditions are fulfilled, let's add one point to score
+; And reset the carrot
+.collision_true:
+	ld	hl, $C170
+	ld	a, $42
+	ld	[hl], a
+	ld	hl, $C210
+	ld	a, [hl]
+	inc	a
+	ld	[hl], a
+	ret
+.too_high:
+	ld	hl, $C170
+	ld	a, 0
+	ld	[hl], a
+	ret
+
 
 ; Handling input and moving Grunio
 
@@ -339,8 +440,10 @@ DB	$00,$00,$00,$00,$00,$00,$80,$80
 DB	$E0,$60,$F0,$10,$58,$28,$48,$38
 DB	$C8,$38,$98,$78,$20,$E0,$40,$C0
 DB	$80,$80,$00,$00,$00,$00,$00,$00	; Grunio end
-DB	$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF	; Carrot start
-DB	$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF	; Carrot end
+DB 	$00,$22,$00,$14,$00,$18,$00,$10	; Carrot start
+DB 	$FF,$FF,$62,$5E,$4A,$76,$6A,$56
+DB 	$52,$6E,$62,$5E,$46,$7A,$56,$6A
+DB 	$54,$6C,$38,$28,$30,$30,$10,$10	; Carrot end
 Grunio_OAM:
 db	$78, $50, $2, 0
 db	$80, $50, $3, 0
@@ -350,5 +453,6 @@ db	$78, $60, $6, 0
 db	$80, $60, $7, 0
 Carrot_OAM:
 db	$79, $00, $8, 0
+db	$79, $00, $9, 0
 
 EndTileCara:
