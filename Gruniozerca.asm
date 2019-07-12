@@ -152,10 +152,7 @@ cleaning_OAM:
 	inc	de
 	ld	a, b
 	jp nz, .next_OAM_Carrot_Byte
-	ld	hl, $C170	; Carrot's collision state
-	ld	a, 0	; State $42 = generate a new carrot
-				; Since we begin a new game, generate one
-	ld	[hl], a
+
 	
 ; Reset score
 	ld	a, 0
@@ -167,10 +164,13 @@ cleaning_OAM:
 	ld	hl, $C220
 	ld	[hl], a
 	
-; PALETTE TEST
-	ld	hl, $FF49
-	ld	a, $FF
+; Reset the carrot's state
+	ld	hl, $C180
+	ld	a, $12	; $12 = "white" carrot, $34 = "black" carrot
 	ld	[hl], a
+	ld	hl, $C170	; Carrot's collision state
+	ld	a, 0	; State $42 = generate a new carrot	
+	ld	[hl], a	; Since we begin a new game, generate one
 	ld	hl, $C153
 	ld	a, [hl]
 	set	4, a
@@ -178,6 +178,19 @@ cleaning_OAM:
 	ld	hl, $C157
 	ld	a, [hl]
 	set	4, a
+	ld	[hl], a
+	
+; Reset Grunio's state
+	ld	hl, $C190
+	ld	a, $12	 ; $12 = Dida (the white guinea pig), $34 = Grunio (the black guinea pig)
+	ld	[hl], a
+	
+; Prepare palletes for Grunio and the carrot
+; Default for Dida and the white carrot
+	ld	a, %11100100
+	ld	hl, $FF48	; First OBJ pallete for the heroes
+	ld	[hl], a
+	ld	hl, $FF49	; Second OBJ pallete for the carrot
 	ld	[hl], a
 
 ; Main loop
@@ -247,6 +260,24 @@ update_Carrot:
 	ld	[hl], a
 	ret
 .generate_new_carrot:
+	ld	hl, $C200	; White or black carrot?
+	ld	a, [hl]
+	and %00000001
+	cp	1
+	jp	nz, .prepare_black_carrot	; Yes, this algorithm is very simple
+	ld	hl, $C180	; And it depends on the carrot's X position
+	ld	a, $12	; The carrot will be white on even X pixels and black on odd X pixels
+	ld	hl, $FF49
+	ld	a, %11100100
+	ld	[hl], a
+	jp	.reset_carrot
+.prepare_black_carrot:
+	ld	hl, $C180
+	ld	a, $34
+	ld	hl, $FF49
+	ld	a, %11111111
+	ld	[hl], a
+.reset_carrot:
 	ld	hl, $C200
 	ld	a, [hl]
 	add	8
@@ -281,7 +312,15 @@ check_collision:
 	ld	[hl], a
 	ret
 .correct_height:
+; Is the the correct hero chosen for the carrot?
+	ld	hl, $C180
+	ld	a, [hl]
+	ld	hl, $C190
+	cp	a, [hl]
+	jp	z, .check_right_side
+	ret; If colours aren't correct, return
 ; Carrot's right side and Grunio's left side
+.check_right_side:
 	ld	hl, $C151
 	ld	a, [hl]
 	add	8	; We want to compare Carrot's right side with Grunio's left side
