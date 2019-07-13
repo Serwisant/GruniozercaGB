@@ -8,7 +8,7 @@
 ;	$C201 - User RNG manipulation
 ;	$C210 - Score
 ;	$C220 - "Lives" (We all know Grunio and Dida are invincible)
-
+;	$C230 - Anti-autofire state (0 = not pressed in the last frame; 1 = pressed in the last frame)
 INCLUDE "gbhw.inc"
 
 SECTION "start", ROM0[$0100]
@@ -184,6 +184,9 @@ cleaning_OAM:
 	ld	hl, $C190
 	ld	a, $12	 ; $12 = Dida (the white guinea pig), $34 = Grunio (the black guinea pig)
 	ld	[hl], a
+	ld	hl, $C230
+	ld	a, 0
+	ld	[hl], a
 	
 ; Prepare palletes for Grunio and the carrot
 ; Default for Dida and the white carrot
@@ -267,6 +270,7 @@ update_Carrot:
 	jp	nz, .prepare_black_carrot	; Yes, this algorithm is very simple
 	ld	hl, $C180	; And it depends on the carrot's X position
 	ld	a, $12	; The carrot will be white on even X pixels and black on odd X pixels
+	ld	[hl], a
 	ld	hl, $FF49
 	ld	a, %11100100
 	ld	[hl], a
@@ -274,6 +278,7 @@ update_Carrot:
 .prepare_black_carrot:
 	ld	hl, $C180
 	ld	a, $34
+	ld	[hl], a
 	ld	hl, $FF49
 	ld	a, %11111111
 	ld	[hl], a
@@ -414,7 +419,7 @@ handle_input:
 	jp nz, .swap_sprites_to_left
 .jump_to_right:
 	cp	%11101110	; Is "right" direction pressed?
-	jp	nz, .return
+	jp	nz, .check_A_button
 	ld	hl, $C201	; RNG user manipulation
 	ld	a, [hl]
 	add	a, 241		; Arbitrary value
@@ -423,7 +428,7 @@ handle_input:
 	bit	5, a
 	ld	a, [$C101]
 	cp	$92			; Grunio again can't leave the screen
-	jp	z, .return
+	jp	z, .check_A_button
 	ld	hl, $C101
 	ld	b, 6
 	ld	de, 4		; The offset between X positions in our "OAM"
@@ -452,6 +457,42 @@ handle_input:
 	ld	a, b
 	cp	$08
 	jp nz, .swap_sprites_to_right	
+.check_A_button
+	ld	a, %11011110
+	ld	[rP1], a
+	ld	a, [rP1]	; Reading several times
+	ld	a, [rP1]	; To secure the correct reading
+	ld	a, [rP1]
+	ld	a, [rP1]
+	cp	%11011110	; Is the "A" button pressed?
+	jp	nz, .reset_autofire
+	ld	hl, $C230
+	ld	a, [hl]
+	cp	1
+	jp	z, .return	; Yes, autofire state = 1, let's return
+	ld	a, 1
+	ld	[hl], a		; Let's set autofire state to 1
+	ld	hl, $C190
+	ld	a, $12
+	cp	a, [hl]		; Is the hero white?
+	jp	nz, .change_to_white	; If no, go change to white
+	ld	a, $34
+	ld	[hl], a
+	ld	hl, $FF48
+	ld	a, $FF
+	ld	[hl], a
+	jp	.return
+.change_to_white:
+	ld	a, $12
+	ld	[hl], a
+	ld	hl, $FF48
+	ld	a, %11100100
+	ld	[hl], a
+	jp	.return
+.reset_autofire
+	ld	hl, $C230	; Let's reset our autofire state
+	ld	a, 0
+	ld	[hl], a
 .return:
 	ret
 
