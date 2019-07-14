@@ -6,7 +6,8 @@
 ;	$C190 - Grunio's Color (Grunio/Dida)
 ;	$C200 - RNG seed
 ;	$C201 - User RNG manipulation
-;	$C210 - Score
+;	$C210 - Score first 2 digits
+;	$C211 - Score last 2 digits
 ;	$C220 - "Lives" (We all know Grunio and Dida are invincible)
 ;	$C230 - Anti-autofire state (0 = not pressed in the last frame; 1 = pressed in the last frame)
 INCLUDE "gbhw.inc"
@@ -26,7 +27,6 @@ st:
 inicialization:
 	ld	a, %11100100	;Pallete registering
 	ld	[rBGP], a
-	ld	[rOBP0], a
 
 ;Setting coordinates for the viewport
 
@@ -40,7 +40,7 @@ inicialization:
 	
 	ld	hl, Sprite_Data
 	ld	de, _VRAM
-	ld	bc, 16*10		; 16 * number of sprites to load
+	ld	bc, 16*20		; 16 * number of sprites to load
 	
 .load_graphics:
 	ld	a, [hl]
@@ -60,7 +60,7 @@ inicialization:
 	ld	de, 32*32
 
 .clear_screen:
-	ld	a, $01
+	ld	a, $00
 	ld	[hl], a
 	dec	de
 	ld	a, d
@@ -70,8 +70,8 @@ inicialization:
 	jp	.clear_screen	
 	
 .turn_on_LCD:	
-	ld	a, %10000010	; Turning on the LCD
-	ld	[rLCDC], a	
+	ld	a, %10010011	; Turning on the LCD
+	ld	[rLCDC], a
 	
 ; Let's prepare the seed for the RNG
 ; We can use the property of the OAM, after each reset GameBoy is filled
@@ -158,6 +158,8 @@ cleaning_OAM:
 	ld	a, 0
 	ld	hl, $C210
 	ld	[hl], a
+	ld	hl, $C211
+	ld	[hl], a
 
 ; Reset "lives"
 	ld	a, 3
@@ -204,6 +206,7 @@ main_loop:
 	call	check_collision
 	call	draw_Grunio
 	call	draw_Carrot
+	call	draw_score
 	call	handle_input
 	call	generate_next_value
 .fin_vB
@@ -346,10 +349,18 @@ check_collision:
 	ld	hl, $C170
 	ld	a, $42
 	ld	[hl], a
+	ld	hl, $C211
+	ld	a, [hl]
+	inc	a
+	daa		; Holy Moly, included BCD support? Noice!
+	cp	$00
+	ld	[hl], a
+	jp	nz, .dont_add_hundreds
 	ld	hl, $C210
 	ld	a, [hl]
 	inc	a
 	ld	[hl], a
+.dont_add_hundreds:
 	ret
 .too_high:
 	ld	hl, $C170
@@ -377,14 +388,14 @@ handle_input:
 	bit	7, a
 	ld	a, [$C101]	; Grunio's horizontal position
 	cp	6			; Grunio's position can't be < 8
-	jp	z, .jump_to_right	; We want to see entire Grunio on the screen
+	jp	c, .jump_to_right	; We want to see entire Grunio on the screen
 	ld	[hl], a
 	ld	b, 6		; Moving all 6 sprites
 	ld	hl, $C101
 	ld	de, 2		; The offset between X positions in our "OAM"
 .move_Grunio_left:
 	ld	a, [hl]
-	sub	3			; Move sprite 2px left
+	sub	3			; Move sprite 3px left
 	ld	[hl], a
 	inc	hl
 	inc	hl
@@ -446,7 +457,7 @@ handle_input:
 	ld	hl, $C102
 	ld	a, [hl]
 	cp	$02			; If Grunio is turned to the right, don't turn him again
-	jp	z, .return
+	jp	z, .check_A_button
 .swap_sprites_to_right:
 	ld	a, b
 	ld	[hl], a
@@ -496,6 +507,40 @@ handle_input:
 .return:
 	ret
 
+draw_score:
+; TODO: Optimize IT DAMMIT!
+; Draw the thousands digit
+	ld	hl, $C210
+	ld	a, [hl]
+	and	%11110000
+	SWAP	a
+	add	a, $0A
+	ld	hl, $9A0F
+	ld	[hl], a
+; Draw the hundreds digit
+	ld	hl, $C210
+	ld	a, [hl]
+	and	%00001111
+	add	a, $0A
+	ld	hl, $9A10
+	ld	[hl], a
+; Draw the tens figit
+	ld	hl, $C211
+	ld	a, [hl]
+	and	%11110000
+	SWAP	a
+	add	a, $0A
+	ld	hl, $9A11
+	ld	[hl], a
+; Draw the ones digit
+	ld	hl, $C211
+	ld	a, [hl]
+	and	%00001111
+	add	a, $0A
+	ld	hl, $9A12
+	ld	[hl], a
+	ret
+
 turn_off_LCD:
 	call wait_for_VBlank
 							; we are in VBlank, we turn off the LCD
@@ -524,6 +569,26 @@ DB 	$00,$22,$00,$14,$00,$18,$00,$10	; Carrot start
 DB 	$FF,$FF,$62,$5E,$4A,$76,$6A,$56
 DB 	$52,$6E,$62,$5E,$46,$7A,$56,$6A
 DB 	$54,$6C,$38,$28,$30,$30,$10,$10	; Carrot end
+DB	$1C,$1C,$26,$26,$26,$26,$26,$26	; 0 sprite
+DB	$26,$26,$26,$26,$26,$26,$1C,$1C
+DB	$3C,$3C,$0C,$0C,$0C,$0C,$0C,$0C	; 1 sprite
+DB	$0C,$0C,$0C,$0C,$0C,$0C,$0C,$0C
+DB	$1C,$1C,$26,$26,$26,$26,$06,$06	; 2 sprite
+DB	$0C,$0C,$18,$18,$30,$30,$3E,$3E
+DB	$1C,$1C,$26,$26,$26,$26,$0C,$0C	; 3 sprite
+DB	$0C,$0C,$26,$26,$26,$26,$1C,$1C
+DB	$0C,$0C,$1C,$1C,$3C,$3C,$6C,$6C	; 4 sprite
+DB	$7E,$7E,$0C,$0C,$0C,$0C,$0C,$0C
+DB	$3C,$3C,$20,$20,$20,$20,$3C,$3C	; 5 sprite
+DB	$06,$06,$06,$06,$06,$06,$3C,$3C
+DB	$3C,$3C,$40,$40,$40,$40,$7C,$7C	; 6 sprite
+DB	$46,$46,$46,$46,$46,$46,$3C,$3C
+DB	$3C,$3C,$26,$26,$06,$06,$06,$06	; 7 sprite
+DB	$06,$06,$06,$06,$06,$06,$06,$06
+DB	$3C,$3C,$46,$46,$46,$46,$7E,$7E	; 8 sprite
+DB	$46,$46,$46,$46,$46,$46,$3C,$3C
+DB	$3C,$3C,$46,$46,$46,$46,$3E,$3E	; 9 sprite
+DB	$06,$06,$06,$06,$06,$06,$3C,$3C
 Grunio_OAM:
 db	$78, $50, $2, 0
 db	$80, $50, $3, 0
