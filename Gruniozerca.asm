@@ -40,7 +40,7 @@ inicialization:
 	
 	ld	hl, Sprite_Data
 	ld	de, _VRAM
-	ld	bc, 16*20		; 16 * number of sprites to load
+	ld	bc, 16*21		; 16 * number of sprites to load
 	
 .load_graphics:
 	ld	a, [hl]
@@ -162,7 +162,7 @@ cleaning_OAM:
 	ld	[hl], a
 
 ; Reset "lives"
-	ld	a, 3
+	ld	a, 4
 	ld	hl, $C220
 	ld	[hl], a
 	
@@ -171,7 +171,7 @@ cleaning_OAM:
 	ld	a, $12	; $12 = "white" carrot, $34 = "black" carrot
 	ld	[hl], a
 	ld	hl, $C170	; Carrot's collision state
-	ld	a, 0	; State $42 = generate a new carrot	
+	ld	a, 42	; State $42 = generate a new carrot	
 	ld	[hl], a	; Since we begin a new game, generate one
 	ld	hl, $C153
 	ld	a, [hl]
@@ -207,6 +207,7 @@ main_loop:
 	call	draw_Grunio
 	call	draw_Carrot
 	call	draw_score
+	call	draw_hearts
 	call	handle_input
 	call	generate_next_value
 .fin_vB
@@ -387,7 +388,7 @@ handle_input:
 	xor	[hl]
 	bit	7, a
 	ld	a, [$C101]	; Grunio's horizontal position
-	cp	6			; Grunio's position can't be < 8
+	cp	6			; Grunio's position can't be < 6
 	jp	c, .jump_to_right	; We want to see entire Grunio on the screen
 	ld	[hl], a
 	ld	b, 6		; Moving all 6 sprites
@@ -541,6 +542,31 @@ draw_score:
 	ld	[hl], a
 	ret
 
+draw_hearts:
+	ld	hl, $C220
+	ld	b, [hl]
+	ld	a, b
+	ld	d, 0
+	cp	a, $FF
+	ret	z
+	ld	hl, $9A00
+.draw_next_heart:
+	inc	hl
+	inc	d
+	ld	a, d
+	cp	4
+	ret	z
+	cp	a, b
+	jp	c, .draw
+	jp	z, .draw
+	ld	a, $0
+	ld	[hl], a
+	jp	.draw_next_heart
+.draw:
+	ld	a, $14
+	ld	[hl], a
+	jp	.draw_next_heart
+
 turn_off_LCD:
 	call wait_for_VBlank
 							; we are in VBlank, we turn off the LCD
@@ -589,6 +615,8 @@ DB	$3C,$3C,$46,$46,$46,$46,$7E,$7E	; 8 sprite
 DB	$46,$46,$46,$46,$46,$46,$3C,$3C
 DB	$3C,$3C,$46,$46,$46,$46,$3E,$3E	; 9 sprite
 DB	$06,$06,$06,$06,$06,$06,$3C,$3C
+DB 	$36,$36,$7F,$7F,$7F,$7F,$7F,$7F ; Heart sprite
+DB 	$7F,$7F,$3E,$3E,$1C,$1C,$08,$08
 Grunio_OAM:
 db	$78, $50, $2, 0
 db	$80, $50, $3, 0
