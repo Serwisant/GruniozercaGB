@@ -3,7 +3,7 @@
 ;	$C150 - Carrot's OAM
 ;	$C170 - Carrot collision state
 ;	$C180 - Carrot type: black or grey/green (depends on the GameBoy's screen)
-;	$C190 - Grunio's Color (Grunio/Dida)
+;	$C190 - Grunio's Colour (Grunio/Dida)
 ;	$C200 - RNG seed
 ;	$C201 - User RNG manipulation
 ;	$C210 - Score first 2 digits
@@ -11,6 +11,18 @@
 ;	$C220 - "Lives" (We all know Grunio and Dida are invincible)
 ;	$C230 - Anti-autofire state (0 = not pressed in the last frame; 1 = pressed in the last frame)
 INCLUDE "gbhw.inc"
+
+GRUNIO_OAM				EQU	$C100
+CARROT_OAM				EQU	$C150
+CARROT_COLLISION_STATE	EQU	$C170
+CARROT_TYPE				EQU	$C180
+GRUNIO_COLOUR			EQU	$C190
+RNG_SEED				EQU	$C200
+USER_RNG_MANIPULATION	EQU	$C201
+SCORE_HIGH_BYTE			EQU	$C210
+SCORE_LOW_BYTE			EQU	$C211
+LIVES					EQU	$C220
+ANTI_AUTOFIRE			EQU	$C239
 
 SECTION "start", ROM0[$0100]
 	nop
