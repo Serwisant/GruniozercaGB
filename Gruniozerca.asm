@@ -8,6 +8,8 @@
 ;	$C201 - User RNG manipulation
 ;	$C210 - Score first 2 digits
 ;	$C211 - Score last 2 digits
+;	$C212 - Hi-score first 2 digits
+;	$C213 - Hi-score last 2 digits
 ;	$C220 - "Lives" (We all know Grunio and Dida are invincible)
 ;	$C230 - Anti-autofire state (0 = not pressed in the last frame; 1 = pressed in the last frame)
 INCLUDE "gbhw.inc"
@@ -21,8 +23,10 @@ RNG_SEED				EQU	$C200
 USER_RNG_MANIPULATION	EQU	$C201
 SCORE_HIGH_BYTE			EQU	$C210
 SCORE_LOW_BYTE			EQU	$C211
+HI_SCORE_HIGH_BYTE		EQU	$C212
+HI_SCORE_LOW_BYTE		EQU	$C213
 LIVES					EQU	$C220
-ANTI_AUTOFIRE			EQU	$C239
+ANTI_AUTOFIRE			EQU	$C230
 
 SECTION "start", ROM0[$0100]
 	nop
@@ -52,7 +56,7 @@ inicialization:
 	
 	ld	hl, Sprite_Data
 	ld	de, _VRAM
-	ld	bc, 16*21		; 16 * number of sprites to load
+	ld	bc, 16*63		; 16 * number of sprites to load
 	
 .load_graphics:
 	ld	a, [hl]
@@ -77,13 +81,14 @@ inicialization:
 	dec	de
 	ld	a, d
 	or	e
-	jp	z, .turn_on_LCD
+	jp	z, RNG_setup
 	inc	hl
 	jp	.clear_screen	
 	
-.turn_on_LCD:	
+turn_on_LCD:	
 	ld	a, %10010011	; Turning on the LCD
 	ld	[rLCDC], a
+	ret
 	
 ; Let's prepare the seed for the RNG
 ; We can use the property of the OAM, after each reset GameBoy is filled
@@ -92,18 +97,20 @@ inicialization:
 ; We will use address $C200 for the seed and
 ; address $C201 for our user manipulation
 
+RNG_setup:
+	call	turn_on_LCD
 	ld	hl, _OAMRAM
 	ld	a, [hl]
-	ld	hl, $C200
+	ld	hl, RNG_SEED
 	ld	[hl], a
 	jp	cleaning_OAM
 	
 ; Generating next value
 
 generate_next_value:	
-	ld	hl, $C200
+	ld	hl, RNG_SEED
 	ld	a, [hl]
-	ld	hl, $C201
+	ld	hl, USER_RNG_MANIPULATION
 .next_generation:
 	swap a
 	rlca
@@ -112,7 +119,7 @@ generate_next_value:
 	jp	c, .return_value
 	jp	.next_generation
 .return_value
-	ld	hl, $C200
+	ld	hl, RNG_SEED
 	ld	[hl], a
 	ret
 	
@@ -122,6 +129,9 @@ generate_next_value:
 ; Creates some garbage in the OAM!!!
 ; For the faster completion, cleaning occurs only during the HBlank
 ; Yes, it's not perfect, but remaining garbage is not visible
+
+RESET:
+	ld	sp, $FFFF
 
 cleaning_OAM:
 	ld	b, 160
@@ -137,10 +147,56 @@ cleaning_OAM:
 	ld	a, b
 	jp	nz, .clean_OAM
 
+
+
+title_screen:
+	call	turn_off_LCD
+	ld	hl, $9800
+	ld	de, 32*18
+	ld	bc, TitleScreenData
+.draw_title_screen:
+	ld	a, [bc]
+	ld	[hl], a
+	dec	de
+	ld	a, d
+	or	e
+	jp	z, .show
+	inc	hl
+	inc	bc
+	jp	.draw_title_screen
+.show:
+	call	turn_on_LCD
+.wait_for_start:
+	ld	a, %11010111
+	ld	[rP1], a
+	ld	a, [rP1]	; Reading several times
+	ld	a, [rP1]	; To secure the correct reading
+	ld	a, [rP1]
+	ld	a, [rP1]
+	cp	%11010111	; Is "left" direction pressed?
+	jp	nz, .wait_for_start
+
+	call	turn_off_LCD
+	ld	hl, $9800
+	ld	de, 32*18
+.clean_screen:
+	ld	a, 0
+	ld	[hl], a
+	dec	de
+	ld	a, d
+	or	e
+	jp	z, .continue_reset
+	inc	hl
+	jp	.clean_screen
+
+
+.continue_reset:
+	call	turn_on_LCD
+
 ; Preparing Grunio's personal space
 
-	ld	hl, $C100
-	ld	de, Grunio_OAM
+	ld	hl, GRUNIO_OAM
+	ld	de, Grunio_OAM_Data
 	ld	b, 4*6	; 4 bytes * 6 Grunio sprites
 .next_OAM_Grunio_Byte:
 	ld	a, [de]
@@ -153,8 +209,8 @@ cleaning_OAM:
 	
 ; Preparing the carrot's space
 
-	ld	hl, $C150
-	ld	de, Carrot_OAM
+	ld	hl, CARROT_OAM
+	ld	de, Carrot_OAM_Data
 	ld	b, 4*4
 .next_OAM_Carrot_Byte:
 	ld	a, [de]
@@ -165,24 +221,23 @@ cleaning_OAM:
 	ld	a, b
 	jp nz, .next_OAM_Carrot_Byte
 
-	
 ; Reset score
 	ld	a, 0
-	ld	hl, $C210
+	ld	hl, SCORE_HIGH_BYTE
 	ld	[hl], a
-	ld	hl, $C211
+	ld	hl, SCORE_LOW_BYTE
 	ld	[hl], a
 
 ; Reset "lives"
 	ld	a, 4
-	ld	hl, $C220
+	ld	hl, LIVES
 	ld	[hl], a
 	
 ; Reset the carrot's state
-	ld	hl, $C180
+	ld	hl, CARROT_TYPE
 	ld	a, $12	; $12 = "white" carrot, $34 = "black" carrot
 	ld	[hl], a
-	ld	hl, $C170	; Carrot's collision state
+	ld	hl, CARROT_COLLISION_STATE	; Carrot's collision state
 	ld	a, 42	; State $42 = generate a new carrot	
 	ld	[hl], a	; Since we begin a new game, generate one
 	ld	hl, $C153
@@ -195,10 +250,11 @@ cleaning_OAM:
 	ld	[hl], a
 	
 ; Reset Grunio's state
-	ld	hl, $C190
+	ld	[hl], a
+	ld	hl, GRUNIO_COLOUR
 	ld	a, $12	 ; $12 = Dida (the white guinea pig), $34 = Grunio (the black guinea pig)
 	ld	[hl], a
-	ld	hl, $C230
+	ld	hl, ANTI_AUTOFIRE
 	ld	a, 0
 	ld	[hl], a
 	
@@ -237,7 +293,7 @@ wait_for_VBlank:
 
 draw_Grunio:
 	ld	hl, $FE00
-	ld	de, $C100
+	ld	de, GRUNIO_OAM
 	ld	b, 4*6
 .next_Grunio_byte:
 	ld	a, [de]
@@ -250,7 +306,7 @@ draw_Grunio:
 
 draw_Carrot:
 	ld	hl, $FE18
-	ld	de, $C150
+	ld	de, CARROT_OAM
 	ld	b, 4*2
 .next_Grunio_byte:
 	ld	a, [de]
@@ -259,18 +315,18 @@ draw_Carrot:
 	inc	de
 	dec	b
 	jp	nz, .next_Grunio_byte
-	ld	hl, $C201	; Bigger RNG manipulation
+	ld	hl, USER_RNG_MANIPULATION	; Bigger RNG manipulation
 	ld	a, [hl]
 	inc	a
 	ld	[hl], a
 	ret
 	
 update_Carrot:
-	ld	hl, $C170	; Let's check if we should reset the carrot after the collision
+	ld	hl, CARROT_COLLISION_STATE	; Let's check if we should reset the carrot after the collision
 	ld	a, [hl]
 	cp	$42
 	jp	z, .generate_new_carrot	; If yes, generate a new carrot
-	ld	hl, $C150	; The carrot's OAM
+	ld	hl, CARROT_OAM	; The carrot's OAM
 	ld	a, [hl]
 	add	a, 2
 	ld	[hl], a
@@ -279,12 +335,12 @@ update_Carrot:
 	ld	[hl], a
 	ret
 .generate_new_carrot:
-	ld	hl, $C200	; White or black carrot?
+	ld	hl, RNG_SEED	; White or black carrot?
 	ld	a, [hl]
 	and %00000001
 	cp	1
 	jp	nz, .prepare_black_carrot	; Yes, this algorithm is very simple
-	ld	hl, $C180	; And it depends on the carrot's X position
+	ld	hl, CARROT_TYPE	; And it depends on the carrot's X position
 	ld	a, $12	; The carrot will be white on even X pixels and black on odd X pixels
 	ld	[hl], a
 	ld	hl, $FF49
@@ -292,21 +348,21 @@ update_Carrot:
 	ld	[hl], a
 	jp	.reset_carrot
 .prepare_black_carrot:
-	ld	hl, $C180
+	ld	hl, CARROT_TYPE
 	ld	a, $34
 	ld	[hl], a
 	ld	hl, $FF49
 	ld	a, %11111111
 	ld	[hl], a
 .reset_carrot:
-	ld	hl, $C200
+	ld	hl, RNG_SEED
 	ld	a, [hl]
 	add	8
 	ld	hl, $C151
 	ld	[hl], a
 	ld	hl, $C155
 	ld	[hl], a
-	ld	hl, $C150
+	ld	hl, CARROT_OAM
 	ld	a, 0
 	ld	[hl], a
 	ld	hl, $C154
@@ -318,25 +374,27 @@ update_Carrot:
 	
 check_collision:
 ; Check y collision
-	ld	hl, $C150	; Carrot Y
+	ld	hl, CARROT_OAM	; Carrot Y
 	ld	a, [hl]
 	cp	$68		; Is Carrot too high?
 	jp	c, .too_high
 	cp	$78		; Is Carrot at the correct height?
 	jp	c, .correct_height	; Carrot is between 
-	ld	hl, $C170
+	ld	hl, CARROT_COLLISION_STATE
 	ld	a, $42	; State for "reset a carrot"
 	ld	[hl], a
-	ld	hl, $C220	; Lose a "life"
+	ld	hl, LIVES	; Lose a "life"
 	ld	a, [hl]
+	cp	0		; Is this the last "life"?
+	jp	z, RESET
 	dec	a
 	ld	[hl], a
 	ret
 .correct_height:
 ; Is the the correct hero chosen for the carrot?
-	ld	hl, $C180
+	ld	hl, CARROT_TYPE
 	ld	a, [hl]
-	ld	hl, $C190
+	ld	hl, GRUNIO_COLOUR
 	cp	a, [hl]
 	jp	z, .check_right_side
 	ret; If colours aren't correct, return
@@ -359,24 +417,24 @@ check_collision:
 ; The conditions are fulfilled, let's add one point to score
 ; And reset the carrot
 .collision_true:
-	ld	hl, $C170
+	ld	hl, CARROT_COLLISION_STATE
 	ld	a, $42
 	ld	[hl], a
-	ld	hl, $C211
+	ld	hl, SCORE_LOW_BYTE
 	ld	a, [hl]
 	inc	a
 	daa		; Holy Moly, included BCD support? Noice!
 	cp	$00
 	ld	[hl], a
 	jp	nz, .dont_add_hundreds
-	ld	hl, $C210
+	ld	hl, SCORE_HIGH_BYTE
 	ld	a, [hl]
 	inc	a
 	ld	[hl], a
 .dont_add_hundreds:
 	ret
 .too_high:
-	ld	hl, $C170
+	ld	hl, CARROT_COLLISION_STATE
 	ld	a, 0
 	ld	[hl], a
 	ret
@@ -393,7 +451,7 @@ handle_input:
 	ld	a, [rP1]
 	cp	%11101101	; Is "left" direction pressed?
 	jp	nz, .jump_to_right
-	ld	hl, $C201	; RNG user manipulation
+	ld	hl, USER_RNG_MANIPULATION	; RNG user manipulation
 	ld	a, [hl]
 	add	a, 119		; Arbitrary value
 	ld	[hl], a
@@ -444,7 +502,7 @@ handle_input:
 .jump_to_right:
 	cp	%11101110	; Is "right" direction pressed?
 	jp	nz, .check_A_button
-	ld	hl, $C201	; RNG user manipulation
+	ld	hl, USER_RNG_MANIPULATION	; RNG user manipulation
 	ld	a, [hl]
 	add	a, 241		; Arbitrary value
 	ld	[hl], a
@@ -490,13 +548,13 @@ handle_input:
 	ld	a, [rP1]
 	cp	%11011110	; Is the "A" button pressed?
 	jp	nz, .reset_autofire
-	ld	hl, $C230
+	ld	hl, ANTI_AUTOFIRE
 	ld	a, [hl]
 	cp	1
 	jp	z, .return	; Yes, autofire state = 1, let's return
 	ld	a, 1
 	ld	[hl], a		; Let's set autofire state to 1
-	ld	hl, $C190
+	ld	hl, GRUNIO_COLOUR
 	ld	a, $12
 	cp	a, [hl]		; Is the hero white?
 	jp	nz, .change_to_white	; If no, go change to white
@@ -514,7 +572,7 @@ handle_input:
 	ld	[hl], a
 	jp	.return
 .reset_autofire
-	ld	hl, $C230	; Let's reset our autofire state
+	ld	hl, ANTI_AUTOFIRE	; Let's reset our autofire state
 	ld	a, 0
 	ld	[hl], a
 .return:
@@ -523,7 +581,7 @@ handle_input:
 draw_score:
 ; TODO: Optimize IT DAMMIT!
 ; Draw the thousands digit
-	ld	hl, $C210
+	ld	hl, SCORE_HIGH_BYTE
 	ld	a, [hl]
 	and	%11110000
 	SWAP	a
@@ -531,14 +589,14 @@ draw_score:
 	ld	hl, $9A0F
 	ld	[hl], a
 ; Draw the hundreds digit
-	ld	hl, $C210
+	ld	hl, SCORE_HIGH_BYTE
 	ld	a, [hl]
 	and	%00001111
 	add	a, $0A
 	ld	hl, $9A10
 	ld	[hl], a
 ; Draw the tens figit
-	ld	hl, $C211
+	ld	hl, SCORE_LOW_BYTE
 	ld	a, [hl]
 	and	%11110000
 	SWAP	a
@@ -546,7 +604,7 @@ draw_score:
 	ld	hl, $9A11
 	ld	[hl], a
 ; Draw the ones digit
-	ld	hl, $C211
+	ld	hl, SCORE_LOW_BYTE
 	ld	a, [hl]
 	and	%00001111
 	add	a, $0A
@@ -555,7 +613,7 @@ draw_score:
 	ret
 
 draw_hearts:
-	ld	hl, $C220
+	ld	hl, LIVES
 	ld	b, [hl]
 	ld	a, b
 	ld	d, 0
@@ -629,15 +687,164 @@ DB	$3C,$3C,$46,$46,$46,$46,$3E,$3E	; 9 sprite
 DB	$06,$06,$06,$06,$06,$06,$3C,$3C
 DB 	$36,$36,$7F,$7F,$7F,$7F,$7F,$7F ; Heart sprite
 DB 	$7F,$7F,$3E,$3E,$1C,$1C,$08,$08
-Grunio_OAM:
+DB $46,$46,$46,$46,$46,$46,$7E,$7E
+DB $46,$46,$46,$46,$46,$46,$46,$46
+DB $18,$18,$18,$18,$18,$18,$18,$18
+DB $18,$18,$18,$18,$18,$18,$18,$18
+DB $38,$38,$40,$40,$40,$40,$78,$78
+DB $0C,$0C,$0C,$0C,$0C,$0C,$78,$78
+DB $38,$38,$60,$60,$60,$60,$60,$60
+DB $60,$60,$60,$60,$60,$60,$38,$38
+DB $38,$38,$4C,$4C,$4C,$4C,$4C,$4C
+DB $4C,$4C,$4C,$4C,$4C,$4C,$38,$38
+DB $78,$78,$6C,$6C,$6C,$6C,$7C,$7C
+DB $68,$68,$68,$68,$6C,$6C,$6C,$6C
+DB $7C,$7C,$60,$60,$60,$60,$7C,$7C
+DB $60,$60,$60,$60,$60,$60,$7C,$7C
+DB $3C,$3C,$66,$66,$66,$66,$7E,$7E
+DB $66,$66,$66,$66,$66,$66,$66,$66
+DB $66,$66,$76,$76,$76,$76,$6E,$6E
+DB $6E,$6E,$66,$66,$66,$66,$66,$66
+DB $00,$00,$00,$00,$00,$00,$00,$00
+DB $00,$00,$00,$00,$18,$18,$18,$18
+DB $66,$66,$66,$66,$66,$66,$66,$66
+DB $66,$66,$66,$66,$66,$66,$3C,$3C
+DB $78,$78,$66,$66,$66,$66,$66,$66
+DB $66,$66,$66,$66,$66,$66,$78,$78
+DB $60,$60,$60,$60,$60,$60,$60,$60
+DB $60,$60,$60,$60,$60,$60,$7C,$7C
+DB $3E,$3E,$60,$60,$60,$60,$60,$60
+DB $6E,$6E,$66,$66,$66,$66,$3E,$3E
+DB $7C,$7C,$66,$66,$66,$66,$7C,$7C
+DB $60,$60,$60,$60,$60,$60,$60,$60
+DB $7E,$7E,$18,$18,$18,$18,$18,$18
+DB $18,$18,$18,$18,$18,$18,$18,$18
+DB $60,$60,$60,$60,$60,$60,$68,$68
+DB $70,$70,$60,$60,$60,$60,$7E,$7E
+DB $62,$62,$64,$64,$68,$68,$70,$70
+DB $68,$68,$66,$66,$66,$66,$66,$66
+DB $7E,$7E,$0C,$0C,$0C,$0C,$30,$30
+DB $60,$60,$60,$60,$60,$60,$7E,$7E
+DB $00,$00,$00,$00,$00,$00,$3C,$3C
+DB $00,$00,$00,$00,$00,$00,$00,$00
+DB $00,$00,$00,$00,$3E,$3E,$7E,$7E
+DB $60,$60,$60,$60,$60,$60,$6E,$6E
+DB $6E,$6E,$66,$66,$66,$66,$66,$66
+DB $7E,$7E,$3E,$3E,$00,$00,$00,$00
+DB $00,$00,$00,$00,$7C,$7C,$7E,$7E
+DB $66,$66,$66,$66,$66,$66,$7E,$7E
+DB $7C,$7C,$6C,$6C,$66,$66,$66,$66
+DB $66,$66,$66,$66,$00,$00,$00,$00
+DB $00,$00,$00,$00,$66,$66,$66,$66
+DB $66,$66,$66,$66,$66,$66,$66,$66
+DB $66,$66,$66,$66,$66,$66,$66,$66
+DB $7E,$7E,$3C,$3C,$00,$00,$00,$00
+DB $00,$00,$00,$00,$66,$66,$66,$66
+DB $66,$66,$76,$76,$76,$76,$76,$76
+DB $6E,$6E,$6E,$6E,$6E,$6E,$66,$66
+DB $66,$66,$66,$66,$00,$00,$00,$00
+DB $00,$00,$00,$00,$63,$63,$67,$67
+DB $66,$66,$66,$66,$66,$66,$66,$66
+DB $66,$66,$66,$66,$66,$66,$66,$66
+DB $67,$67,$63,$63,$00,$00,$00,$00
+DB $01,$01,$00,$00,$C7,$C7,$E7,$E7
+DB $60,$60,$60,$60,$60,$60,$61,$61
+DB $61,$61,$63,$63,$63,$63,$66,$66
+DB $E7,$E7,$C7,$C7,$00,$00,$00,$00
+DB $80,$80,$00,$00,$E7,$E7,$E7,$E7
+DB $66,$66,$66,$66,$C6,$C6,$C7,$C7
+DB $07,$07,$06,$06,$06,$06,$06,$06
+DB $E7,$E7,$E7,$E7,$00,$00,$00,$00
+DB $00,$00,$00,$00,$CF,$CF,$CF,$CF
+DB $0C,$0C,$0C,$0C,$0C,$0C,$CF,$CF
+DB $CF,$CF,$0C,$0C,$0C,$0C,$0C,$0C
+DB $CC,$CC,$CC,$CC,$00,$00,$00,$00
+DB $00,$00,$00,$00,$87,$87,$CF,$CF
+DB $CC,$CC,$CC,$CC,$CC,$CC,$CC,$CC
+DB $8C,$8C,$0C,$0C,$CC,$CC,$CC,$CC
+DB $CF,$CF,$C7,$C7,$00,$00,$00,$00
+DB $00,$00,$00,$00,$8F,$8F,$9F,$9F
+DB $19,$19,$19,$19,$19,$19,$1F,$1F
+DB $1F,$1F,$19,$19,$19,$19,$19,$19
+DB $99,$99,$99,$99,$00,$00,$00,$00
+DB $00,$00,$00,$00,$00,$00,$80,$80
+DB $80,$80,$80,$80,$80,$80,$80,$80
+DB $80,$80,$80,$80,$80,$80,$80,$80
+DB $80,$80,$80,$80,$00,$00,$00,$00
+Grunio_OAM_Data:
 db	$78, $50, $2, 0
 db	$80, $50, $3, 0
 db	$78, $58, $4, 0
 db	$80, $58, $5, 0
 db	$78, $60, $6, 0
 db	$80, $60, $7, 0
-Carrot_OAM:
+Carrot_OAM_Data:
 db	$79, $00, $8, 0
 db	$79, $00, $9, 0
+TitleScreenData::
+DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+DB $00,$00,$00,$00,$00,$00,$00,$29,$2B,$2D
+DB $2F,$31,$33,$35,$37,$39,$3B,$3D,$00,$00
+DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$2A
+DB $2C,$2E,$30,$32,$34,$36,$38,$3A,$3C,$3E
+DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+DB $15,$16,$28,$17,$18,$19,$1A,$1B,$00,$00
+DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+DB $00,$00,$00,$00,$00,$17,$23,$1B,$18,$16
+DB $1C,$21,$00,$24,$15,$1C,$1D,$26,$17,$00
+DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+DB $00,$1C,$1A,$15,$1D,$1E,$1B,$1F,$00,$00
+DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+DB $19,$1A,$16,$22,$16,$1D,$1C,$21,$00,$18
+DB $19,$1D,$18,$1B,$23,$24,$00,$00,$00,$00
+DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+DB $00,$00,$00,$00,$00,$25,$1F,$26,$1C,$17
+DB $27,$00,$26,$1F,$1A,$00,$00,$00,$00,$00
+DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$0C
+DB $0A,$0B,$13,$00,$20,$1A,$16,$21,$21,$00
+DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00
 
 EndTileCara:
