@@ -81,7 +81,7 @@ inicialization:
 	dec	de
 	ld	a, d
 	or	e
-	jp	z, RNG_setup
+	jp	z, reset_hi_score
 	inc	hl
 	jp	.clear_screen	
 	
@@ -89,6 +89,14 @@ turn_on_LCD:
 	ld	a, %10010011	; Turning on the LCD
 	ld	[rLCDC], a
 	ret
+	
+reset_hi_score:
+	ld	hl, HI_SCORE_HIGH_BYTE
+	ld	a, 0
+	ld	[hl], a
+	ld	hl, HI_SCORE_LOW_BYTE
+	ld	a, $20		; 20 points will be the default hi-score
+	ld	[hl], a
 	
 ; Let's prepare the seed for the RNG
 ; We can use the property of the OAM, after each reset GameBoy is filled
@@ -164,9 +172,41 @@ title_screen:
 	inc	hl
 	inc	bc
 	jp	.draw_title_screen
-.show:
+.show:		; Let's also draw the hi-score
+; Draw the thousands digit
+	ld	hl, HI_SCORE_HIGH_BYTE
+	ld	a, [hl]
+	and	%11110000
+	SWAP	a
+	add	a, $0A
+	ld	hl, $9908
+	ld	[hl], a
+; Draw the hundreds digit
+	ld	hl, HI_SCORE_HIGH_BYTE
+	ld	a, [hl]
+	and	%00001111
+	add	a, $0A
+	ld	hl, $9909
+	ld	[hl], a
+; Draw the tens figit
+	ld	hl, HI_SCORE_LOW_BYTE
+	ld	a, [hl]
+	and	%11110000
+	SWAP	a
+	add	a, $0A
+	ld	hl, $990A
+	ld	[hl], a
+; Draw the ones digit
+	ld	hl, HI_SCORE_LOW_BYTE
+	ld	a, [hl]
+	and	%00001111
+	add	a, $0A
+	ld	hl, $990B
+	ld	[hl], a
 	call	turn_on_LCD
 .wait_for_start:
+	ld	hl, USER_RNG_MANIPULATION
+	inc	[hl]		; Let's stir some RNG manipulation
 	ld	a, %11010111
 	ld	[rP1], a
 	ld	a, [rP1]	; Reading several times
@@ -386,7 +426,7 @@ check_collision:
 	ld	hl, LIVES	; Lose a "life"
 	ld	a, [hl]
 	cp	0		; Is this the last "life"?
-	jp	z, RESET
+	jp	z, check_hiscore
 	dec	a
 	ld	[hl], a
 	ret
@@ -439,7 +479,29 @@ check_collision:
 	ld	[hl], a
 	ret
 
-
+check_hiscore:
+	ld	hl, SCORE_HIGH_BYTE
+	ld	a, [hl]
+	ld	hl, HI_SCORE_HIGH_BYTE
+	cp	a, [hl]
+	jp	c, RESET	; Our score's high byte (thousands and hundreds) is lower
+					; than hi-score's high byte. Reset.
+	ld	hl, SCORE_LOW_BYTE
+	ld	a, [hl]
+	ld	hl, HI_SCORE_LOW_BYTE
+	cp	a, [hl]
+	jp	c, RESET	; Same as above, just tens and ones
+	ld	hl, SCORE_HIGH_BYTE	; Let's set a new hi-score!
+	ld	a, [hl]
+	ld	hl, HI_SCORE_HIGH_BYTE
+	ld	[hl], a
+	ld	hl, SCORE_LOW_BYTE
+	ld	a, [hl]
+	ld	hl, HI_SCORE_LOW_BYTE
+	ld	[hl], a
+	jp	RESET	; Time to reset
+	
+	
 ; Handling input and moving Grunio
 
 handle_input:
