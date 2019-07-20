@@ -56,7 +56,7 @@ inicialization:
 	
 	ld	hl, Sprite_Data
 	ld	de, _VRAM
-	ld	bc, 16*194		; 16 * number of sprites to load
+	ld	bc, 16*196		; 16 * number of sprites to load
 	
 .load_graphics:
 	ld	a, [hl]
@@ -155,8 +155,6 @@ cleaning_OAM:
 	ld	a, b
 	jp	nz, .clean_OAM
 
-
-
 title_screen:
 	call	turn_off_LCD
 	ld	hl, $9800
@@ -225,7 +223,7 @@ title_screen:
 	ld	bc, BG_tile_map
 .draw_next_tile:
 	ld	a, [bc]
-	add	a, $3F
+	add	a, $41		; Tile padding, GameBoy Tile Generator doesn't have the opption for padding
 	ld	[hl], a
 	dec	de
 	ld	a, d
@@ -426,13 +424,28 @@ check_collision:
 	jp	c, .too_high
 	cp	$78		; Is Carrot at the correct height?
 	jp	c, .correct_height	; Carrot is between 
+	ld	hl, rNR10	; Let's play a sound
+	ld	a, $3A
+	ld	[hl], a
+	ld	hl, rNR11
+	ld	a, $80
+	ld	[hl], a
+	ld	hl, rNR12
+	ld	a, $FF
+	ld	[hl], a
+	ld	hl, rNR13
+	ld	a, $B3
+	ld	[hl], a
+	ld	hl, rNR14
+	ld	a, $C6
+	ld	[hl], a
 	ld	hl, CARROT_COLLISION_STATE
 	ld	a, $42	; State for "reset a carrot"
 	ld	[hl], a
 	ld	hl, LIVES	; Lose a "life"
 	ld	a, [hl]
 	cp	0		; Is this the last "life"?
-	jp	z, check_hiscore
+	jp	z, show_game_over
 	dec	a
 	ld	[hl], a
 	ret
@@ -463,7 +476,22 @@ check_collision:
 ; The conditions are fulfilled, let's add one point to score
 ; And reset the carrot
 .collision_true:
-	ld	hl, CARROT_COLLISION_STATE
+	ld	hl, rNR10	; Let's play a sound
+	ld	a, $65
+	ld	[hl], a
+	ld	hl, rNR11
+	ld	a, $80
+	ld	[hl], a
+	ld	hl, rNR12
+	ld	a, $FF
+	ld	[hl], a
+	ld	hl, rNR13
+	ld	a, $06
+	ld	[hl], a
+	ld	hl, rNR14
+	ld	a, $C7
+	ld	[hl], a
+	ld	hl, CARROT_COLLISION_STATE	; Reset the carrot
 	ld	a, $42
 	ld	[hl], a
 	ld	hl, SCORE_LOW_BYTE
@@ -484,6 +512,28 @@ check_collision:
 	ld	a, 0
 	ld	[hl], a
 	ret
+
+show_game_over:
+	ld	hl, $98E5
+	ld	de, Game_Over_Text
+	ld	b, 9
+.next_letter:
+	ld	a, [de]
+	ld	[hl], a
+	inc	de
+	inc	hl
+	dec	b
+	ld	a, b
+	cp	0
+	jp	nz, .next_letter
+	ld	de, $02FF	; Let's wait
+.next_frame:
+	call	wait_for_VBlank
+	dec	de
+	ld	a, d
+	or	e
+	cp	0
+	jp	nz, .next_frame
 
 check_hiscore:
 	ld	hl, SCORE_HIGH_BYTE
@@ -839,6 +889,10 @@ DB	$00,$00,$00,$00,$00,$00,$80,$80
 DB	$80,$80,$80,$80,$80,$80,$80,$80
 DB	$80,$80,$00,$80,$00,$80,$00,$80
 DB	$00,$80,$00,$80,$00,$00,$00,$00	; Logo end
+DB	$46,$46,$6E,$6E,$7E,$7E,$56,$56	; M
+DB	$46,$46,$46,$46,$46,$46,$00,$00
+DB	$66,$66,$66,$66,$66,$66,$66,$66	; V
+DB	$66,$66,$18,$18,$18,$18,$00,$00
 ; BG tiles
 bg_tile_data:
 DB	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
@@ -978,8 +1032,8 @@ db	$80, $58, $5, 0
 db	$78, $60, $6, 0
 db	$80, $60, $7, 0
 Carrot_OAM_Data:
-db	$79, $00, $8, 0
-db	$79, $00, $9, 0
+db	$00, $00, $8, 0
+db	$00, $00, $9, 0
 TitleScreenData::
 DB	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
 DB	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
@@ -1083,4 +1137,6 @@ DB	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
 DB	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
 DB	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
 DB	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+Game_Over_Text:
+DB	$22, $1C, $3F, $1B, $00, $19, $40, $1B, $1A
 EndTileCara:
