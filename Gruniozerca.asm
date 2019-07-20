@@ -1,18 +1,25 @@
+; Gruniożerca
+; GameBoy version by Grzegorz Bydełek
+; Original concept: Łukasz Kur, Ryszard Brzukała
+
 ; Memory map:
-;	$C100 - Grunio's OAM
-;	$C150 - Carrot's OAM
-;	$C170 - Carrot collision state
-;	$C180 - Carrot type: black or grey/green (depends on the GameBoy's screen)
-;	$C190 - Grunio's Colour (Grunio/Dida)
+;	$C100 - Grunio's OAM	(6 sprites * 4 bytes)
+;	$C150 - Carrot's OAM	(2 sprites * 4 bytes)
+;	$C170 - Carrot collision state ($00 = Don't reset/no collision, $42 = reset/collision occured)
+;	$C180 - Carrot type: "black" or "white" ($12 = "white", $34 = "black")
+;	$C190 - Grunio's Colour ($12 = Dzidzia ("white"), $34 = Grunio ("Black")
+;			NOTE: In the following code "Grunio" means either Grunio or Dzidzia
 ;	$C200 - RNG seed
 ;	$C201 - User RNG manipulation
-;	$C210 - Score first 2 digits
-;	$C211 - Score last 2 digits
-;	$C212 - Hi-score first 2 digits
-;	$C213 - Hi-score last 2 digits
-;	$C220 - "Lives" (We all know Grunio and Dida are invincible)
+;	$C210 - Score first 2 digits (BCD)
+;	$C211 - Score last 2 digits (BCD)
+;	$C212 - Hi-score first 2 digits (BCD)
+;	$C213 - Hi-score last 2 digits (BCD)
+;	$C220 - "Lives" (We all know Grunio and Dzidzia are invincible)
 ;	$C230 - Anti-autofire state (0 = not pressed in the last frame; 1 = pressed in the last frame)
-INCLUDE "gbhw.inc"
+
+INCLUDE "gbhw.inc"	; The hardware definition I use is named like this, change this line
+					; or rename your file if you need
 
 GRUNIO_OAM				EQU	$C100
 CARROT_OAM				EQU	$C150
@@ -41,16 +48,16 @@ st:
 	ld	sp, $ffff
 	
 inicialization:
-	ld	a, %11100100	;Pallete registering
+	ld	a, %11100100	; Default pallete
 	ld	[rBGP], a
 
-;Setting coordinates for the viewport
+; Setting coordinates for the viewport to (0, 0)
 
 	ld a, 0
 	ld [rSCX], a
 	ld [rSCY], a
 	
-	call turn_off_LCD	; We have gain access to VRAM
+	call turn_off_LCD	; We have to gain access to VRAM
 	
 ; Loading Sprites
 	
@@ -69,12 +76,11 @@ inicialization:
 	inc	de
 	jr	.load_graphics
 	
-; Cleaning VRAM
+; Cleaning tiles
 	
 .cls:
 	ld	hl, $9800
 	ld	de, 32*32
-
 .clear_screen:
 	ld	a, $00
 	ld	[hl], a
@@ -85,10 +91,20 @@ inicialization:
 	inc	hl
 	jp	.clear_screen	
 	
+turn_off_LCD:
+	call wait_for_VBlank
+							; we are in VBlank, we turn off the LCD
+    ld      a,[rLCDC]     	; in A, the contents of the LCDC 
+    res     7,a             ; we zero bit 7 (on the LCD)
+    ld      [rLCDC],a 		; DON'T CHANGE THIS SUBROUTINE! Possible real hardware damage!
+	ret
+	
 turn_on_LCD:	
 	ld	a, %10010011	; Turning on the LCD
 	ld	[rLCDC], a
 	ret
+	
+; Reseting the hi-score
 	
 reset_hi_score:
 	ld	hl, HI_SCORE_HIGH_BYTE
@@ -101,7 +117,7 @@ reset_hi_score:
 ; Let's prepare the seed for the RNG
 ; We can use the property of the OAM, after each reset GameBoy is filled
 ; with random values. This will be base for our random generator.
-; We will use value of the 1st sprite.
+; We will use the Y value of the 1st sprite.
 ; We will use address $C200 for the seed and
 ; address $C201 for our user manipulation
 
@@ -132,9 +148,7 @@ generate_next_value:
 	ret
 	
 ; Cleaning OAM
-; SOME STUPID !@# BUGS WITHOUT IT
-; Because turning on the sprite layer
-; Creates some garbage in the OAM!!!
+; After turning on the console, the memory is filled with random values
 ; For the faster completion, cleaning occurs only during the HBlank
 ; Yes, it's not perfect, but remaining garbage is not visible
 
@@ -147,7 +161,7 @@ cleaning_OAM:
 	
 .clean_OAM:
 	ld	a, [rSTAT]
-	cp	$80		; Hex 80 = HBlank is active
+	cp	$80		; $80 = HBlank is active
 	jp	nz, .clean_OAM
 	ld	a, 0
 	ldi	[hl], a
@@ -155,11 +169,13 @@ cleaning_OAM:
 	ld	a, b
 	jp	nz, .clean_OAM
 
+; Draw the title screen
+
 title_screen:
 	call	turn_off_LCD
 	ld	hl, $9800
 	ld	de, 32*18
-	ld	bc, TitleScreenData
+	ld	bc, Title_Screen_Data
 .draw_title_screen:
 	ld	a, [bc]
 	ld	[hl], a
@@ -170,7 +186,8 @@ title_screen:
 	inc	hl
 	inc	bc
 	jp	.draw_title_screen
-.show:		; Let's also draw the hi-score
+; Let's also draw the hi-score
+.show:
 ; Draw the thousands digit
 	ld	hl, HI_SCORE_HIGH_BYTE
 	ld	a, [hl]
@@ -211,19 +228,19 @@ title_screen:
 	ld	a, [rP1]	; To secure the correct reading
 	ld	a, [rP1]
 	ld	a, [rP1]
-	cp	%11010111	; Is "left" direction pressed?
+	cp	%11010111	; Is the "start" button pressed?
 	jp	nz, .wait_for_start
 
 ; Let's draw the main background
 
 	call	turn_off_LCD
 .draw_background:
-	ld	hl, $9800
+	ld	hl, _SCRN0
 	ld	de, 32*20
 	ld	bc, BG_tile_map
 .draw_next_tile:
 	ld	a, [bc]
-	add	a, $41		; Tile padding, GameBoy Tile Generator doesn't have the opption for padding
+	add	a, $43		; Tile padding, GameBoy Tile Data Generator doesn't have the option for a padding of the values
 	ld	[hl], a
 	dec	de
 	ld	a, d
@@ -233,7 +250,6 @@ title_screen:
 	inc	bc
 	jp	.draw_next_tile
 
-
 .continue_reset:
 	call	turn_on_LCD
 
@@ -241,7 +257,7 @@ title_screen:
 
 	ld	hl, GRUNIO_OAM
 	ld	de, Grunio_OAM_Data
-	ld	b, 4*6	; 4 bytes * 6 Grunio sprites
+	ld	b, 4*6	; 4 OAM bytes * 6 Grunio sprites
 .next_OAM_Grunio_Byte:
 	ld	a, [de]
 	ld	[hl], a
@@ -255,7 +271,7 @@ title_screen:
 
 	ld	hl, CARROT_OAM
 	ld	de, Carrot_OAM_Data
-	ld	b, 4*4
+	ld	b, 4*4	; 4 OAM bytes * 4 carrot sprites
 .next_OAM_Carrot_Byte:
 	ld	a, [de]
 	ld	[hl], a
@@ -296,14 +312,14 @@ title_screen:
 ; Reset Grunio's state
 	ld	[hl], a
 	ld	hl, GRUNIO_COLOUR
-	ld	a, $12	 ; $12 = Dida (the white guinea pig), $34 = Grunio (the black guinea pig)
+	ld	a, $12	 ; $12 = Dzidzia (the white guinea pig), $34 = Grunio (the black guinea pig)
 	ld	[hl], a
 	ld	hl, ANTI_AUTOFIRE
 	ld	a, 0
 	ld	[hl], a
 	
 ; Prepare palletes for Grunio and the carrot
-; Default for Dida and the white carrot
+; Default for Dzidzia and the white carrot
 	ld	a, %11100100
 	ld	hl, $FF48	; First OBJ pallete for the heroes
 	ld	[hl], a
@@ -311,6 +327,9 @@ title_screen:
 	ld	[hl], a
 
 ; Main loop
+; Many calls, many cycles lost. The loop is organised this way for my convenience.
+; By organizing every piece one after another we could gain at least 180 cycles,
+; but the console is bored waiting for VBlank, so I leave it the way it is.
 
 main_loop:
 	call	wait_for_VBlank
@@ -322,8 +341,12 @@ main_loop:
 	call	draw_hearts
 	call	handle_input
 	call	generate_next_value
-.fin_vB
 	jr	main_loop
+	
+; For my convenience the game executes code during the VBlank
+; so the game runs in 60 FPS (faster and better than Castlevania: The Adventure DON'T HIT I LOVE THE ENTIRE FRANCHISE!)
+; Also, the video memory can only be accessed during VBlank or HBlank, but HBlank is really short.
+; An alternative is DMA. It's not used here as I had some problems with it.
 	
 wait_for_VBlank:
 	ldh	a, [rLY]
@@ -332,8 +355,7 @@ wait_for_VBlank:
 	ret
 
 ; Subroutine drawing Grunio
-; So far no DMA, so the drawing occurs during the VBlank
-; So this is basically my own "DMA"
+; I implement my own "DMA" for the heroes and the carrot
 
 draw_Grunio:
 	ld	hl, $FE00
@@ -424,7 +446,7 @@ check_collision:
 	jp	c, .too_high
 	cp	$78		; Is Carrot at the correct height?
 	jp	c, .correct_height	; Carrot is between 
-	ld	hl, rNR10	; Let's play a sound
+	ld	hl, rNR10	; Let's play a "missed" sound
 	ld	a, $3A
 	ld	[hl], a
 	ld	hl, rNR11
@@ -469,14 +491,14 @@ check_collision:
 .check_left_side:
 	ld	hl, $C101
 	ld	a, [hl]
-	add	a, 24	; Grunio's sprite is 24 pixel wide
+	add	a, 24	; Grunio's hitbox is 24 pixel wide
 	ld	hl, $C151
 	cp	a, [hl]
 	jp	c, .too_high	; The check is reversed in this case, so the condition is also reversed
 ; The conditions are fulfilled, let's add one point to score
 ; And reset the carrot
 .collision_true:
-	ld	hl, rNR10	; Let's play a sound
+	ld	hl, rNR10	; Let's play a "collected" sound
 	ld	a, $65
 	ld	[hl], a
 	ld	hl, rNR11
@@ -513,6 +535,8 @@ check_collision:
 	ld	[hl], a
 	ret
 
+; Show "Game over"
+
 show_game_over:
 	ld	hl, $98E5
 	ld	de, Game_Over_Text
@@ -535,13 +559,16 @@ show_game_over:
 	cp	0
 	jp	nz, .next_frame
 
+; Is the current score higher than the hiscore?
+; Executed after "Game over"
+
 check_hiscore:
 	ld	hl, SCORE_HIGH_BYTE
 	ld	a, [hl]
 	ld	hl, HI_SCORE_HIGH_BYTE
 	cp	a, [hl]
-	jp	c, RESET	; Our score's high byte (thousands and hundreds) is lower
-					; than hi-score's high byte. Reset.
+	jp	c, RESET	; If our score's high byte (thousands and hundreds) is lower
+					; than hi-score's high byte, reset.
 	ld	hl, SCORE_LOW_BYTE
 	ld	a, [hl]
 	ld	hl, HI_SCORE_LOW_BYTE
@@ -557,8 +584,7 @@ check_hiscore:
 	ld	[hl], a
 	jp	RESET	; Time to reset
 	
-	
-; Handling input and moving Grunio
+; Handling the input and moving Grunio
 
 handle_input:
 	ld	a, %11101101
@@ -660,7 +686,7 @@ handle_input:
 .check_A_button
 	ld	a, %11011110
 	ld	[rP1], a
-	ld	a, [rP1]	; Reading several times
+	ld	a, [rP1]	; Read several times
 	ld	a, [rP1]	; To secure the correct reading
 	ld	a, [rP1]
 	ld	a, [rP1]
@@ -696,8 +722,9 @@ handle_input:
 .return:
 	ret
 
+; Drawing the score during the gameplay
+
 draw_score:
-; TODO: Optimize IT DAMMIT!
 ; Draw the thousands digit
 	ld	hl, SCORE_HIGH_BYTE
 	ld	a, [hl]
@@ -754,19 +781,10 @@ draw_hearts:
 	ld	a, $14
 	ld	[hl], a
 	jp	.draw_next_heart
-
-turn_off_LCD:
-	call wait_for_VBlank
-							; we are in VBlank, we turn off the LCD
-    ld      a,[rLCDC]     	; in A, the contents of the LCDC 
-    res     7,a             ; we zero bit 7 (on the LCD)
-    ld      [rLCDC],a 		; DON'T CHANGE THIS SUBROUTINE! Possible real hardware damage
-	
-	ret
 	
 Sprite_Data:
-db	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-db	$FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF
+DB	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0	; Empty sprite
+DB	$FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF	; Filled sprite
 DB	$00,$00,$0F,$0F,$1F,$18,$3F,$30	; Grunio sprites start!
 DB	$FF,$E0,$FF,$80,$FF,$80,$FF,$80
 DB	$BF,$C0,$9F,$E0,$8F,$F3,$81,$FF
@@ -897,8 +915,8 @@ DB	$66,$66,$66,$66,$66,$66,$18,$18	; Y
 DB	$18,$18,$18,$18,$18,$18,$00,$00
 DB	$7C,$7C,$66,$66,$66,$66,$78,$78	; B
 DB	$66,$66,$66,$66,$7C,$7C,$00,$00
-; BG tiles
-bg_tile_data:
+; Background tiles
+BG_Tile_Data:
 DB	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
 DB	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$03,$00,$03,$00
 DB	$00,$00,$10,$00,$38,$00,$38,$00,$38,$00,$34,$00,$74,$00,$72,$00
@@ -1028,6 +1046,7 @@ DB	$00,$FF,$00,$FF,$00,$FF,$00,$FE,$00,$E6,$00,$C2,$00,$80,$FF,$FF
 DB	$00,$FF,$00,$FF,$00,$FF,$00,$83,$00,$83,$00,$83,$00,$83,$FF,$FF
 DB	$00,$FF,$00,$FF,$00,$CE,$00,$84,$00,$00,$00,$00,$00,$00,$FF,$FF
 DB	$00,$FF,$00,$FF,$00,$7F,$00,$38,$00,$18,$00,$18,$00,$18,$FF,$FF
+
 Grunio_OAM_Data:
 db	$78, $50, $2, 0
 db	$80, $50, $3, 0
@@ -1035,10 +1054,12 @@ db	$78, $58, $4, 0
 db	$80, $58, $5, 0
 db	$78, $60, $6, 0
 db	$80, $60, $7, 0
+
 Carrot_OAM_Data:
 db	$00, $00, $8, 0
 db	$00, $00, $9, 0
-TitleScreenData::
+
+Title_Screen_Data:
 DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00
 DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00
 DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00
@@ -1104,7 +1125,7 @@ DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00
 DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00
 DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00
 
-; BG tile map
+; Background tile map
 BG_tile_map:
 DB	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
 DB	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
@@ -1142,6 +1163,7 @@ DB	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
 DB	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
 DB	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
 DB	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+
 Game_Over_Text:
 DB	$22, $1C, $3F, $1B, $00, $19, $40, $1B, $1A
 EndTileCara:
