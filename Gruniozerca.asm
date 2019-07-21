@@ -18,8 +18,7 @@
 ;	$C220 - "Lives" (We all know Grunio and Dzidzia are invincible)
 ;	$C230 - Anti-autofire state (0 = not pressed in the last frame; 1 = pressed in the last frame)
 
-INCLUDE "gbhw.inc"	; The hardware definition I use is named like this, change this line
-					; or rename your file if you need
+INCLUDE "hardware.inc"	; The hardware definitions
 
 GRUNIO_OAM				EQU	$C100
 CARROT_OAM				EQU	$C150
