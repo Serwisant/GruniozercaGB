@@ -228,7 +228,8 @@ title_screen:
 	ld	a, [rP1]	; To secure the correct reading
 	ld	a, [rP1]
 	ld	a, [rP1]
-	cp	%11010111	; Is the "start" button pressed?
+	and	%00111111
+	cp	%00010111	; Is the "start" button pressed?
 	jp	nz, .wait_for_start
 
 ; Let's draw the main background
@@ -593,7 +594,8 @@ handle_input:
 	ld	a, [rP1]	; To secure the correct reading
 	ld	a, [rP1]
 	ld	a, [rP1]
-	cp	%11101101	; Is "left" direction pressed?
+	and	%00111111
+	cp	%00101101	; Is "left" direction pressed?
 	jp	nz, .jump_to_right
 	ld	hl, USER_RNG_MANIPULATION	; RNG user manipulation
 	ld	a, [hl]
@@ -644,7 +646,7 @@ handle_input:
 	cp	0
 	jp nz, .swap_sprites_to_left
 .jump_to_right:
-	cp	%11101110	; Is "right" direction pressed?
+	cp	%00101110	; Is "right" direction pressed?
 	jp	nz, .check_A_button
 	ld	hl, USER_RNG_MANIPULATION	; RNG user manipulation
 	ld	a, [hl]
@@ -690,7 +692,8 @@ handle_input:
 	ld	a, [rP1]	; To secure the correct reading
 	ld	a, [rP1]
 	ld	a, [rP1]
-	cp	%11011110	; Is the "A" button pressed?
+	and	%00111111
+	cp	%00011110	; Is the "A" button pressed?
 	jp	nz, .reset_autofire
 	ld	hl, ANTI_AUTOFIRE
 	ld	a, [hl]
